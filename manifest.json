@@ -184,5 +184,8 @@
         "defaultValue": true
       }
     ]
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.notifications"
   }
 }

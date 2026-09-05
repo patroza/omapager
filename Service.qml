@@ -17,6 +17,7 @@ import Quickshell.Services.Notifications
 import qs.Commons
 
 import "Store.js" as Store
+import "Compat.js" as Compat
 import "Layout.js" as Layout
 
 Item {
@@ -120,10 +121,7 @@ Item {
   readonly property int maxDuration: 30000
 
   function durationFor(urgency, requested) {
-    if (urgency === NotificationUrgency.Critical) return 0        // never expires
-    var base = urgency === NotificationUrgency.Low ? lowDuration : normalDuration
-    if (requested > 0) return Math.min(requested, maxDuration)
-    return base
+    return Compat.duration(urgency, requested)
   }
 
   // ------------------------------------------------------------- snooze
@@ -748,6 +746,7 @@ Item {
     refsRevision += 1
     notification.closed.connect(function() {
       if (service.refs[key] === notification) delete service.refs[key]
+      service.forgetArchivedAction(key, notification)
     })
     if (previous && previous !== notification) {
       try { previous.tracked = false } catch (e) {}
@@ -759,7 +758,7 @@ Item {
     var muted = doNotDisturb ? "silenced"
               : (globalSnoozeUntil || snoozedUntil(row.groupKey)) ? "snoozed" : ""
     if (muted && codesBypassQuiet && String(row.code || "")) muted = ""
-    if (muted && notification.urgency !== NotificationUrgency.Critical) {
+    if (muted && !Compat.bypass(notification)) {
       Store.write(storeProc, storeBin, "put", row)
       Store.write(storeProc, storeBin, "close", null, [key, muted])
       release(key)
@@ -849,7 +848,8 @@ Item {
     var at = rowIndexFor(key)
     if (at < 0) return
     var ref = refs[key]
-    if (ref) {
+    var retained = reason === "expired" && retainArchivedAction(key, ref)
+    if (ref && !retained) {
       // Tell the sender which way it went: expired and dismissed are
       // different events on the bus, and some apps act on the difference.
       try {
@@ -857,7 +857,8 @@ Item {
         else ref.dismiss()
       } catch (e) {}
     }
-    release(key)
+    if (!retained) release(key)
+    else delete refs[key]
     toasts.remove(at)
     delete heights[key]
     Store.write(storeProc, storeBin, "close", null, [key, reason])
@@ -1098,7 +1099,48 @@ Item {
     Hyprland.dispatch("hl.dsp.focus({window = " + target + "})")
   }
 
+  // Notification-center callbacks remain in memory only and are bounded.
+  property var archivedActionRefs: ({})
+  property var archivedActionOrder: []
+  function defaultAction(ref) {
+    try {
+      if (ref && ref.actions) for (var i = 0; i < ref.actions.length; i++)
+        if (ref.actions[i].identifier === "default") return ref.actions[i]
+    } catch (e) {}
+    return null
+  }
+  function forgetArchivedAction(key, expected) {
+    if (expected && archivedActionRefs[key] !== expected) return
+    delete archivedActionRefs[key]
+    archivedActionOrder = archivedActionOrder.filter(function(k) { return k !== key })
+  }
+  function retainArchivedAction(key, ref) {
+    if (!defaultAction(ref)) return false
+    forgetArchivedAction(key)
+    archivedActionRefs[key] = ref
+    archivedActionOrder = archivedActionOrder.concat([key])
+    while (archivedActionOrder.length > 100) {
+      var oldest = archivedActionOrder[0], oldRef = archivedActionRefs[oldest]
+      forgetArchivedAction(oldest)
+      try { if (oldRef) { oldRef.expire(); oldRef.tracked = false } } catch (e) {}
+    }
+    return true
+  }
+  function invokeArchivedDefault(key) {
+    var ref = archivedActionRefs[key], action = defaultAction(ref)
+    if (!action) return false
+    forgetArchivedAction(key, ref)
+    try { action.invoke(); ref.dismiss(); ref.tracked = false; return true } catch (e) { return false }
+  }
   function activate(key) {
+    var index = rowIndexFor(key)
+    var entry = index >= 0 ? toasts.get(index) : null
+    var argv = Compat.argv(entry ? entry.execArgv : "")
+    if (argv) {
+      Quickshell.execDetached(argv)
+      closeToast(key, "activated")
+      return
+    }
     var ref = refs[key]
     var handled = false
     if (ref && ref.actions) {

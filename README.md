@@ -271,3 +271,27 @@ sudo pacman -S wl-clipboard kdeconnect   # kdeconnect also needs the phone app
 ## Licence
 
 Apache-2.0.
+
+## Compatibility additions in this fork
+
+This branch preserves an existing Omarchy desktop configuration:
+
+- Validated `omarchy-exec-argv` click hints run as an argv vector, never
+  interpolated into a shell command, and survive Omapager history restoration.
+- Critical popups expire after 15–30 seconds. Critical urgency by itself does
+  not bypass DND: only `omarchy-action` feedback and critical `notify-send`
+  alerts do. Omapager's configurable verification-code exception remains.
+- Up to 100 expired default actions stay in memory for the notification-center
+  plugin through `invokeArchivedDefault(key)`. Callbacks are never serialized.
+- Replacement metadata identifies the service as replacing
+  `omarchy.notifications`; the original and any other replacement must be disabled.
+
+The existing notification-center plugin needs its input directories pointed
+at Omapager's `live` and `history` directories. Its ingestion adapter must use
+the JSON `key` for deduplication, convert `ts` seconds to milliseconds, and
+preserve `rawBody` for browser-origin routing. This deployment config is
+maintained outside Omapager.
+
+Validation: `node compat.test.cjs`, `qmllint Service.qml`, and a live synthetic
+notification verifying click execution and a single correctly timestamped
+entry in the existing notification center.

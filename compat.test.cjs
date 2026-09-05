@@ -1,0 +1,13 @@
+const fs = require('node:fs');
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+const c = vm.createContext({});
+vm.runInContext(fs.readFileSync(__dirname + '/Compat.js','utf8').replace(/^\.pragma.*$/mg,''),c);
+for (const value of ['{}', '[1]', '["-bad"]', '[""]', 'bad']) assert.equal(c.argv(value),null);
+assert.equal(JSON.stringify(c.argv('["echo","$(not executed)"]')), '["echo","$(not executed)"]');
+assert.equal(c.duration(2,0),15000);
+assert.equal(c.duration(2,999999),30000);
+assert.equal(c.bypass({appName:'Slack',urgency:2}),false);
+assert.equal(c.bypass({appName:'notify-send',urgency:2}),true);
+assert.equal(c.bypass({appName:'omarchy-action',urgency:0}),true);
+console.log('argv validation, bounded critical duration and DND policy passed');

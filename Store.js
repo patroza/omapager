@@ -37,6 +37,7 @@ function snapshot(n, key, urgencyEnum) {
   return normalise({
     key: key,
     originalId: n.id || 0,
+    execArgv: String(hints["omarchy-exec-argv"] || ""),
     senderPid: senderPid,
     app: String(n.appName || ""),
     appIcon: String(n.appIcon || named || ""),
@@ -68,7 +69,7 @@ function snapshot(n, key, urgencyEnum) {
 }
 
 // The fields an in-place update (replaces_id) must write through to the row.
-var ROLES = ["originalId", "senderPid", "app", "appIcon", "summary", "body", "rawBody", "bodyRich",
+var ROLES = ["execArgv", "originalId", "senderPid", "app", "appIcon", "summary", "body", "rawBody", "bodyRich",
              "bodyLine", "source", "groupKey", "image", "urgency",
              "expireTimeout", "duration", "ts",
              "code", "codes", "link", "meeting", "filePath", "phone", "replyPath", "replyTo"]
@@ -95,7 +96,7 @@ var RESTORE_GRACE = 20000     // 20s for a notification that outlived its sender
 // without `source`, and every notification for the rest of the session lost
 // it. Everything goes through normalise() so they all have every field.
 var SHAPE = {
-  key: "", originalId: 0, senderPid: 0, app: "", appIcon: "", summary: "", body: "",
+  execArgv: "", key: "", originalId: 0, senderPid: 0, app: "", appIcon: "", summary: "", body: "",
   bodyRich: "", bodyLine: "", rawBody: "", source: "", groupKey: "", image: "",
   code: "", codes: "", link: "", meeting: false, filePath: "", phone: "", replyPath: "", replyTo: "",
   stored_image: "", urgency: 1, expireTimeout: 0, duration: 0, ts: 0,
