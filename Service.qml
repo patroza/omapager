@@ -695,8 +695,18 @@ Item {
 
   // The layout above only knows about cards that are staying. Everything on
   // its way out is pinned where it was, fading, taking no room.
+  //
+  // Copied, not borrowed. `layout.placements` belongs to the binding above,
+  // and writing the leaving cards straight into it meant this binding mutated
+  // its own input while reading it: Qt saw `layout` change mid-evaluation,
+  // re-ran `placements`, and the two chased each other - a hundred binding-loop
+  // warnings per scene, and the work behind them on the frames the animation
+  // is trying to keep smooth. It also left cards that had finished leaving
+  // sitting inside `layout.placements` until the next retarget cleared them.
   readonly property var placements: {
-    var out = layout.placements
+    var out = {}
+    var base = layout.placements
+    for (var k in base) out[k] = base[k]
     for (var key in leaving) out[key] = restingPlace(key)
     return out
   }
@@ -1353,22 +1363,9 @@ Item {
     }
   }
 
-  // "~/Screenshots/shot.png" is the shape a sender writes most often, and it is
-  // the first thing Detect.paths looks for - but "file://" + that parses with ~
-  // as the *hostname*, so the URL points at a machine called ~ and the file
-  // never opens. Expand it, and encode what follows: a path with a space in it
-  // is not a URL until you do, and a # in a filename would cut the rest off as
-  // a fragment.
-  function fileUrl(path) {
-    var p = String(path || "")
-    if (p.charAt(0) === "~") p = Quickshell.env("HOME") + p.slice(1)
-    return "file://" + encodeURI(p).replace(/#/g, "%23").replace(/\?/g, "%3F")
-  }
-
   function takeOffer(kind, value, key) {
     if (kind === "code") copyText(value, true)
     else if (kind === "phone") copyText(value, false)
-    else if (kind === "path") Qt.openUrlExternally(fileUrl(value))
     else Qt.openUrlExternally(value)
 
     // A copied code is a finished notification: it exists to carry six digits
@@ -1613,7 +1610,7 @@ Item {
       return wanted
     }
 
-    // Take one of the front card's offers - "code", "link", "phone", "path".
+    // Take one of the front card's offers - "code", "link", "phone".
     // The same thing the little marks do, without a pointer.
     function offer(kind: string): string {
       if (toasts.count === 0) return "nothing"
@@ -1621,7 +1618,6 @@ Item {
       var want = String(kind || "code")
       var value = want === "code" ? String(row.code || "")
                 : want === "phone" ? String(row.phone || "")
-                : want === "path" ? String(row.filePath || "")
                 : String(row.link || "")
       if (!value) return "none"
       service.takeOffer(want, value, String(row.key))
