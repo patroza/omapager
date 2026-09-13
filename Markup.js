@@ -6,6 +6,7 @@
 // you actually care about. So this does two jobs: work out where a
 // notification really came from, and render only what is safe to render.
 .pragma library
+.import "Security.js" as Security
 
 var ALLOWED = ["b", "i", "u", "s", "em", "strong"]
 
@@ -22,7 +23,7 @@ function decodeEntities(text) {
   // &amp;quot;. One pass turns that into &quot; and the card shows the entity
   // rather than the quote mark. Bounded, and it stops as soon as a pass
   // changes nothing.
-  var out = String(text || "")
+  var out = Security.bounded(text, Security.MAX_BODY)
   for (var i = 0; i < 3; i++) {
     var once = decodeOnce(out)
     if (once === out) break
@@ -70,7 +71,7 @@ function unescapeAllowed(text) {
   // the scheme is one worth handing to the desktop - see linkable().
   out = out.replace(/&lt;a\s+href=(?:&quot;|")([^"&]+)(?:&quot;|")[^&]*&gt;([\s\S]*?)&lt;\/a&gt;/gi,
                     function (whole, href, label) {
-                      return linkable(href) ? '<a href="' + href + '">' + label + '</a>'
+                      return linkable(href) ? '<a href="' + Security.safeExternalUrl(href) + '">' + label + '</a>'
                                             : label
                     })
   return out
@@ -83,22 +84,14 @@ function unescapeAllowed(text) {
 // is the sender's too, so it is free to read like a link to somewhere ordinary.
 // Three schemes are worth that trust. Anything else keeps its text and loses
 // its click: still readable, no longer a button to somewhere else.
-var LINKABLE = /^(?:https?|mailto):/i
-
-function linkable(url) {
-  return LINKABLE.test(String(url || ""))
-}
-
-function hostOf(url) {
-  var m = String(url || "").match(/^[a-z]+:\/\/([^\/\?#:]+)/i)
-  if (!m) return ""
-  return m[1].replace(/^www\./i, "")
-}
+function linkable(url) { return !!Security.safeExternalUrl(url) }
+function hostname(value) { return Security.canonicalHostname(value) }
+function hostOf(url) { return Security.hostOf(url) }
 
 // A body that opens with a link to the sender's own origin is not a message
 // with a link in it - it is the sender labelling itself. Lift it out.
 function liftSource(body) {
-  var text = String(body || "")
+  var text = Security.bounded(body, Security.MAX_BODY)
   var m = text.match(/^\s*<a\s+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>\s*/i)
   if (!m) return { source: "", body: text }
   var label = String(m[2]).trim()
@@ -107,12 +100,18 @@ function liftSource(body) {
   // or a bare domain. A real in-body link stays where the sender put it.
   var looksLikeSource = label === host || /^[\w.-]+\.[a-z]{2,}$/i.test(label)
   if (!looksLikeSource) return { source: "", body: text }
-  return { source: host || label, body: text.slice(m[0].length) }
+  // The label is the sender's text too. It stands in only when the href was
+  // never a URL - if the href *is* one and its host does not survive the test,
+  // that is the case worth refusing, not worth papering over with the label.
+  var source = host || (/^[a-z]+:\/\//i.test(m[1]) ? "" : hostname(label))
+  if (!source) return { source: "", body: text }
+  return { source: source, body: text.slice(m[0].length) }
 }
 
 function linkify(escaped) {
   return escaped.replace(/(https?:\/\/[^\s<]+)/g, function(url) {
-    return '<a href="' + url + '">' + url + '</a>'
+    var safe = Security.safeHttpUrl(decodeEntities(url))
+    return safe ? '<a href="' + safe.replace(/&/g, '&amp;') + '">' + url + '</a>' : url
   })
 }
 
@@ -129,8 +128,11 @@ function render(body) {
 }
 
 // Flatten to one line, for a card that is not the one being read.
+// Strip only what the rich renderer recognises as markup; <String> and <3
+// remain literal. Undo our escaping once, without decoding the sender again.
 function oneLine(body) {
-  return decodeEntities(String(body || "").replace(/<[^>]+>/g, " "))
+  var text = unescapeAllowed(escapeAll(decodeEntities(body)))
+  return decodeOnce(text.replace(/<[^>]+>/g, " "))
     .replace(/\s+/g, " ")
     .trim()
 }
