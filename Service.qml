@@ -71,6 +71,27 @@ Item {
     interval: 1
     onTriggered: sandboxProbe.running = true
   }
+
+  // Replacement bars hand widgets a service-less facade, so Widget.qml cannot
+  // push settings and helpers would wait forever. Read our own bar entry.
+  FileView {
+    path: Quickshell.env("HOME") + "/.config/omarchy/shell.json"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: service.applyEntrySettings(text())
+    onLoadFailed: service.applyEntrySettings("{}")
+  }
+  function applyEntrySettings(text) {
+    var s = Compat.entrySettings(text, "njpatel.omapager")
+    if (!s) return
+    requireSandbox = s.requireSandbox === true
+    setFetchRemoteIcons(s.fetchRemoteIcons !== false)
+    allowDefaultActionOnCardClick = s.allowDefaultActionOnCardClick === true
+    var hours = Number(s.historyHours === undefined ? 24 : s.historyHours)
+    setHistoryHours([0, 1, 24, 168].indexOf(hours) >= 0 ? hours : 24)
+    helperSettingsReady = true
+  }
   function setHistoryHours(hours) {
     Store.write(storeProc, storeBin, "policy", {historyHours: hours})
   }
